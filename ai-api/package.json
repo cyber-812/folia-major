@@ -1,0 +1,1 @@
+{"description":"Adapter that serves Folia's /api/generate-theme_openai and /api/segment-lyrics handlers on a plain Node http server (for Render Web Service deployment).","engines":{"node":">=18"},"name":"folia-ai-api","private":true,"scripts":{"start":"node server.mjs"},"type":"module","version":"1.0.0"}
