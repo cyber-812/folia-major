@@ -15,6 +15,11 @@
 //   OPENAI_API_MODEL      例如 gpt-4o-mini
 //   AI_PROVIDER           填 openai，让 segment-lyrics 也走 OpenAI 连接
 //   PORT                  本服务监听端口（Render 自动注入）
+//
+// 跨域（CORS）：原生 App 的 WebView 源是 https://localhost，与本服务跨域，
+// 浏览器会先发 OPTIONS 预检、且要求响应带 Access-Control-Allow-Origin，
+// 否则 fetch 直接被拦。故本适配层统一补 CORS 头并处理预检。AI 路由不使用
+// Cookie/凭据，Allow-Origin 用 * 即可。
 
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
@@ -56,11 +61,25 @@ async function toWebRequest(req) {
   return new Request(url, init);
 }
 
-async function writeWebResponse(res, webResponse) {
+function corsHeaders(req) {
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+    'Access-Control-Max-Age': '86400',
+  };
+  const requested = req?.headers?.['access-control-request-headers'];
+  headers['Access-Control-Allow-Headers'] = requested || 'Content-Type, Authorization';
+  return headers;
+}
+
+async function writeWebResponse(res, webResponse, req) {
   const headers = {};
   webResponse.headers.forEach((value, name) => {
     headers[name] = value;
   });
+  for (const [name, value] of Object.entries(corsHeaders(req))) {
+    if (!(name.toLowerCase() in headers)) headers[name] = value;
+  }
   const body = Buffer.from(await webResponse.arrayBuffer());
   res.writeHead(webResponse.status, headers);
   res.end(body);
@@ -70,26 +89,32 @@ const server = createServer(async (req, res) => {
   try {
     const { pathname } = new URL(req.url, 'http://localhost');
 
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, corsHeaders(req));
+      res.end();
+      return;
+    }
+
     if (req.method === 'GET' && pathname === '/') {
-      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', ...corsHeaders(req) });
       res.end('folia-ai-api ok\n');
       return;
     }
 
     const handler = ROUTES.get(pathname);
     if (!handler) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.writeHead(404, { 'Content-Type': 'application/json', ...corsHeaders(req) });
       res.end(JSON.stringify({ error: 'Not Found' }));
       return;
     }
 
     const webRequest = await toWebRequest(req);
     const webResponse = await handler(webRequest);
-    await writeWebResponse(res, webResponse);
+    await writeWebResponse(res, webResponse, req);
   } catch (error) {
     console.error('ai-api adapter error:', error);
     if (!res.headersSent) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.writeHead(500, { 'Content-Type': 'application/json', ...corsHeaders(req) });
     }
     res.end(JSON.stringify({ error: 'Internal Server Error' }));
   }
