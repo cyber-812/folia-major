@@ -198,7 +198,9 @@ ${JSON.stringify(THEME_JSON_SCHEMA, null, 2)}` : '';
 };
 const buildThemeSourcePrompt = (snippet, isPureMusic, songTitle) => `Pure instrumental: ${isPureMusic ? 'yes' : 'no'}
 ${isPureMusic && songTitle ? `Song title: ${songTitle}\n` : ''}Source snippet:
-${snippet}`;
+${snippet}
+
+Return the result as one json object.`;
 const extractResponseContentText = (message) => {
     if (!message) {
         return null;
